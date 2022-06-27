@@ -97,13 +97,16 @@ def post_process(data: Dict, from_date: datetime, to_date: datetime):
             yield [date, *last]
 
 
+def daily_exchange_rate(from_currencies: List, to_currencies: List, from_date: datetime, to_date:datetime):
+    key = get_key(currency=from_currencies, currency_denom=to_currencies)
+    result = query(key=key, from_date=from_date, to_date=to_date)
+    return post_process(data=result, from_date=from_date, to_date=to_date)
+
+
 if __name__ == "__main__":
-    key = get_key(currency="", currency_denom="")
     from_date = datetime.date.today() - datetime.timedelta(days=7)
     to_date = datetime.date.today()
-
-    result = query(key=key, from_date=from_date, to_date=to_date)
-    result = post_process(data=result, from_date=from_date, to_date=to_date)
+    result = daily_exchange_rate(from_currencies=[], to_currencies=[], from_date=from_date, to_date=to_date)
 
     with open("output.csv", 'w', newline='') as file:
         writer = csv.writer(file)

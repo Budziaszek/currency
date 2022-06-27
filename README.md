@@ -8,7 +8,7 @@ of time I believe that it is better to parse xml.
 
 ## Additional data
 I have used loop to get all metadata about series, but then decided to get only the attributes, which I was using.
-(see commit b1c469cb)
+(see commit df0c2fda)
 
 ```python
 currency_data = {
@@ -25,9 +25,16 @@ but there is one exception - currently, if start date given is the data for whic
 I would solve this by running additional queries in post processing (post_process).
 
 ## Currency denomination
-It seems that service has only data for EUR denomination. Am I missing something? Should I calculate
+It seems that service has only data for EUR denomination. Am I missing something or should I calculate
 values?
 
+# TODO
+* tests
+* no data available (start date case)
+* conversion to any currency
 
+# Improvements
+* caching
+* storing copy of post processed data - if there are limits, or processing is time-consuming
 
 
