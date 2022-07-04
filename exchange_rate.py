@@ -84,17 +84,28 @@ def query(key: str,
     return result
 
 
+def get_inverse_currency(value):
+    return value['CURRENCY_DENOM'], value['CURRENCY'], 1.0 / float(value['VALUE'])
+
+
+def get_currency_row(value):
+    return value['CURRENCY'], value['CURRENCY_DENOM'], value['VALUE']
+
+
 def post_process(data: Dict, from_date: datetime, to_date: datetime):
     dates_range = [(from_date + datetime.timedelta(days=d)).strftime('%Y-%m-%d')
                    for d in range((to_date - from_date).days)]
 
     yield ['date', 'currency', 'currency_denom', 'value']
     for key, value in data.items():
-        last = [None, None, None, None]
+        last = None
+
         for date in dates_range:
             if date in value:
-                last = [value[date]['CURRENCY'], value[date]['CURRENCY_DENOM'], value[date]['VALUE']]
-            yield [date, *last]
+                last = value[date]
+
+            yield get_currency_row(last)
+            yield get_inverse_currency(last)
 
 
 def daily_exchange_rate(from_currencies: List, to_currencies: List, from_date: datetime, to_date:datetime):
