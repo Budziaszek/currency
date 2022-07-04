@@ -20,21 +20,14 @@ currency_data = {
 ```
 
 ## No data available
-When no data is available for a specific day, the day will include the last known values from previous days,
-but there is one exception - currently, if start date given is the data for which the service will not return results.
-I would solve this by running additional queries in post processing (post_process).
-
-## Currency denomination
-It seems that service has only data for EUR denomination. Am I missing something or should I calculate
-values?
-
-# TODO
-* tests
-* no data available (start date case)
-* conversion to any currency
+When no data is available for a specific day, the day will include the last known values from previous days. Request
+always include margin to avoid situation when the first date is a bank holiday or weekend day. Margin is currently set
+to 4 days.
 
 # Improvements
 * caching
 * storing copy of post processed data - if there are limits, or processing is time-consuming
+* not requesting all data always (but I guess it does not change a lot)
 
-
+# TODO
+* tests (not required)

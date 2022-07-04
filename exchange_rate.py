@@ -3,7 +3,7 @@ import datetime
 import logging
 from collections import defaultdict
 from http import HTTPStatus
-from typing import Dict, Union, List
+from typing import Dict, Union, List, Set
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
@@ -37,81 +37,78 @@ def get_key(currency: Union[str, List], currency_denom: Union[str, List], freque
     return key
 
 
-def get_url(series, from_date: datetime, to_date: datetime, csv_data=True):
+def get_url(series, from_date: datetime, to_date: datetime):
     base_uri = 'https://sdw-wsrest.ecb.europa.eu/service/data/EXR/'
     from_date_str = f"?startPeriod={from_date.strftime('%Y-%m-%d')}"
     to_date_str = f"?endPeriod={to_date.strftime('%Y-%m-%d')}"
     return base_uri + series + from_date_str + '&' + to_date_str
 
 
-def was_requested(currency_data, from_currencies, to_currencies):
-    if from_currencies is None or currency_data['CURRENCY'] in from_currencies:
-        if to_currencies is None or currency_data['CURRENCY_DENOM'] in to_currencies:
-            return True
-    return False
-
-
-def get_data(data, from_currencies=None, to_currencies=None):
-    parsed_data = defaultdict(dict)
+def get_data(data):
+    parsed_data = defaultdict(lambda: defaultdict(dict))
     for series in data:
-        currency_data = {
-            'CURRENCY': series['generic:SeriesKey']['generic:Value'][1]['@value'],
-            'CURRENCY_DENOM': series['generic:SeriesKey']['generic:Value'][2]['@value']
-        }
-        if was_requested(currency_data, from_currencies, to_currencies):
-            for item in series['generic:Obs']:
-                row = {
-                    'VALUE': item['generic:ObsValue']['@value'],
-                    **currency_data
-                }
-                label = f'{currency_data["CURRENCY"]}-{currency_data["CURRENCY_DENOM"]}'
-                parsed_data[label][item['generic:ObsDimension']['@value']] = row
+        currency = series['generic:SeriesKey']['generic:Value'][1]['@value']
+        for item in series['generic:Obs']:
+            value = float(item['generic:ObsValue']['@value'])
+            date = datetime.datetime.strptime(item['generic:ObsDimension']['@value'], '%Y-%m-%d').date()
+            parsed_data[date][currency]['EUR'] = value
+            parsed_data[date]['EUR'][currency] = 1.0 / value
     return parsed_data
 
 
-def query(key: str,
-          from_date: datetime,
-          to_date: datetime):
+def query(key: str, from_date: datetime, to_date: datetime):
     try:
         with urlopen(get_url(series=key, from_date=from_date, to_date=to_date)) as url:
             raw = parse(url.read().decode('utf8'))
     except HTTPError as e:
         e.msg = ERROR_MESSAGES[e.code]
         raise
-
     result = get_data(data=raw['message:GenericData']['message:DataSet']['generic:Series'])
     logging.debug(f"Request for (key={key}, from_date={from_date}, to_date={to_date}) resulted in {len(result)} items.")
     return result
 
 
-def get_inverse_currency(value):
-    return value['CURRENCY_DENOM'], value['CURRENCY'], 1.0 / float(value['VALUE'])
+def get_currency_to_all(data: Dict, date: datetime, currencies: Set):
+    for currency in currencies:
+        for currency_denom in currencies - {currency}:
+            data[date][currency][currency_denom] = data[date][currency]['EUR'] / data[date][currency_denom]['EUR']
 
 
-def get_currency_row(value):
-    return value['CURRENCY'], value['CURRENCY_DENOM'], value['VALUE']
+def get_rows(data: Dict, date: datetime, currencies: Set, from_currencies: List, to_currencies: List):
+    from_currencies = from_currencies if from_currencies else currencies
+    to_currencies = to_currencies if to_currencies else currencies
+
+    for currency in from_currencies:
+        for currency_denom in to_currencies - {currency}:
+            yield date, currency, currency_denom, data[date][currency][currency_denom]
 
 
-def post_process(data: Dict, from_date: datetime, to_date: datetime):
-    dates_range = [(from_date + datetime.timedelta(days=d)).strftime('%Y-%m-%d')
-                   for d in range((to_date - from_date).days)]
-
+def post_process(data: Dict, from_date: datetime, to_date: datetime, from_currencies: List, to_currencies: List):
+    dates_range = [(from_date + datetime.timedelta(days=d)) for d in range((to_date - from_date).days)]
+    currencies = {'CHF', 'BGN', 'HKD', 'PHP', 'RON', 'NZD', 'SGD', 'KRW', 'CZK', 'PLN', 'SEK', 'DKK', 'GBP', 'ISK',
+                  'USD', 'MYR', 'HUF', 'IDR', 'MXN', 'ZAR', 'AUD', 'ILS', 'CAD', 'THB', 'TRY', 'NOK', 'HRK', 'BRL',
+                  'JPY', 'INR', 'CNY'}
     yield ['date', 'currency', 'currency_denom', 'value']
-    for key, value in data.items():
-        last = None
 
-        for date in dates_range:
-            if date in value:
-                last = value[date]
+    for date in dates_range:
+        if date in data:
+            get_currency_to_all(data, date, currencies)
+        else:
+            if min(data.keys()) >= date:
+                logging.warning(f"Data for {date} not found!")
+            else:
+                data[date] = data[date - datetime.timedelta(days=1)]
+        yield from get_rows(data, date, currencies, from_currencies, to_currencies)
 
-            yield get_currency_row(last)
-            yield get_inverse_currency(last)
 
-
-def daily_exchange_rate(from_currencies: List, to_currencies: List, from_date: datetime, to_date:datetime):
-    key = get_key(currency=from_currencies, currency_denom=to_currencies)
-    result = query(key=key, from_date=from_date, to_date=to_date)
-    return post_process(data=result, from_date=from_date, to_date=to_date)
+def daily_exchange_rate(from_currencies: List, to_currencies: List, from_date: datetime, to_date: datetime, t: int = 4):
+    key = get_key(currency=[], currency_denom=[])
+    result = query(key=key, from_date=from_date - datetime.timedelta(days=t), to_date=to_date)
+    return post_process(data=result,
+                        from_date=from_date,
+                        to_date=to_date,
+                        from_currencies=from_currencies,
+                        to_currencies=to_currencies)
 
 
 if __name__ == "__main__":
